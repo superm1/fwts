@@ -30,8 +30,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define PM_SUSPEND_PMUTILS		"pm-suspend"
-#define PM_SUSPEND_HYBRID_PMUTILS	"pm-suspend-hybrid"
 #define PM_SUSPEND_PATH			"/sys/power/mem_sleep"
 #define PM_SUSPEND_LAST_HW_SLEEP	"/sys/power/suspend_stats/last_hw_sleep"
 #define PM_SUSPEND_TOTAL_HW_SLEEP	"/sys/power/suspend_stats/total_hw_sleep"
@@ -47,7 +45,6 @@ static int  s3_max_delay = 30;		/* max time between resume and next suspend */
 static float s3_delay_delta = 0.5;	/* amount to add to delay between each S3 tests */
 static int  s3_sleep_delay = 30;	/* time between start of suspend and wakeup */
 static bool s3_device_check = false;	/* check for device config changes */
-static char *s3_quirks = NULL;		/* Quirks to be passed to pm-suspend */
 static int  s3_device_check_delay = 15;	/* Time to sleep after waking up and then running device check */
 static bool s3_min_max_delay = false;
 static float s3_suspend_time = 15.0;	/* Maximum allowed suspend time */
@@ -292,17 +289,13 @@ static void detect_pm_method(fwts_pm_method_vars *fwts_settings)
 		fwts_sysfs_can_hybrid_suspend(fwts_settings) :
 		fwts_sysfs_can_suspend(fwts_settings))
 		fwts_settings->fw->pm_method = FWTS_PM_SYSFS;
-	else
-		fwts_settings->fw->pm_method = FWTS_PM_PMUTILS;
 }
 
 #if FWTS_ENABLE_LOGIND
 static int wrap_logind_do_suspend(fwts_pm_method_vars *fwts_settings,
 	const int percent,
-	int *duration,
-	const char *str)
+	int *duration)
 {
-	FWTS_UNUSED(str);
 	char *action = s3_hybrid ? PM_SUSPEND_HYBRID_LOGIND : PM_SUSPEND_LOGIND;
 
 	fwts_progress_message(fwts_settings->fw, percent, "(Suspending)");
@@ -317,42 +310,16 @@ static int wrap_logind_do_suspend(fwts_pm_method_vars *fwts_settings,
 
 static int wrap_sysfs_do_suspend(fwts_pm_method_vars *fwts_settings,
 	const int percent,
-	int *duration,
-	const char *str)
+	int *duration)
 {
 	int status;
 
-	FWTS_UNUSED(str);
 	(void)fwts_klog_write(fwts_settings->fw, FWTS_SUSPEND "\n");
 	fwts_progress_message(fwts_settings->fw, percent, "(Suspending)");
 	(void)fwts_klog_write(fwts_settings->fw, FWTS_SUSPEND "\n");
 	(void)fwts_klog_write(fwts_settings->fw, "Starting fwts suspend\n");
 	time(&(fwts_settings->t_start));
 	status = fwts_sysfs_do_suspend(fwts_settings, s3_hybrid);
-	(void)fwts_klog_write(fwts_settings->fw, FWTS_RESUME "\n");
-	(void)fwts_klog_write(fwts_settings->fw, "Finished fwts resume\n");
-	time(&(fwts_settings->t_end));
-	fwts_progress_message(fwts_settings->fw, percent, "(Resumed)");
-
-	*duration = (int)(fwts_settings->t_end - fwts_settings->t_start);
-
-	return status;
-}
-
-static int wrap_pmutils_do_suspend(fwts_pm_method_vars *fwts_settings,
-	const int percent,
-	int *duration,
-	const char *command)
-{
-	int status = 0;
-
-	(void)fwts_klog_write(fwts_settings->fw, FWTS_SUSPEND "\n");
-	fwts_progress_message(fwts_settings->fw, percent, "(Suspending)");
-	(void)fwts_klog_write(fwts_settings->fw, FWTS_SUSPEND "\n");
-	(void)fwts_klog_write(fwts_settings->fw, "Starting fwts suspend\n");
-	(void)fwts_klog_write(fwts_settings->fw, FWTS_SUSPEND "\n");
-	time(&(fwts_settings->t_start));
-	(void)fwts_exec(command, &status);
 	(void)fwts_klog_write(fwts_settings->fw, FWTS_RESUME "\n");
 	(void)fwts_klog_write(fwts_settings->fw, "Finished fwts resume\n");
 	time(&(fwts_settings->t_end));
@@ -442,7 +409,7 @@ static int s3_do_suspend_resume(fwts_framework *fw,
 	fwts_list resume_wakeup_soure;
 	bool wk_src_found = false;
 
-	int (*do_suspend)(fwts_pm_method_vars *, const int, int*, const char*);
+	int (*do_suspend)(fwts_pm_method_vars *, const int, int*);
 
 	fwts_settings = calloc(1, sizeof(fwts_pm_method_vars));
 	if (fwts_settings == NULL)
@@ -467,10 +434,6 @@ static int s3_do_suspend_resume(fwts_framework *fw,
 			do_suspend = &wrap_logind_do_suspend;
 			break;
 #endif
-		case FWTS_PM_PMUTILS:
-			fwts_log_info(fw, "Using pm-utils as the default power method.");
-			do_suspend = &wrap_pmutils_do_suspend;
-			break;
 		case FWTS_PM_SYSFS:
 			fwts_log_info(fw, "Using sysfs as the default power method.");
 			do_suspend = &wrap_sysfs_do_suspend;
@@ -485,37 +448,6 @@ static int s3_do_suspend_resume(fwts_framework *fw,
 	if (s3_device_check)
 		fwts_hwinfo_get(fw, &hwinfo1);
 
-	/* Format up pm-suspend command with optional quirking arguments */
-	if (fw->pm_method == FWTS_PM_PMUTILS) {
-		if (s3_hybrid) {
-			if ((command = fwts_realloc_strcat(NULL, PM_SUSPEND_HYBRID_PMUTILS)) == NULL) {
-				rc = FWTS_OUT_OF_MEMORY;
-				goto tidy;
-			}
-		} else {
-			if ((command = fwts_realloc_strcat(NULL, PM_SUSPEND_PMUTILS)) == NULL) {
-				rc = FWTS_OUT_OF_MEMORY;
-				goto tidy;
-			}
-		}
-
-		/* For now we only support quirks with pm-utils */
-		if (s3_quirks) {
-			if ((command = fwts_realloc_strcat(command, " ")) == NULL) {
-				rc = FWTS_OUT_OF_MEMORY;
-				goto tidy;
-			}
-			if ((quirks = fwts_args_comma_list(s3_quirks)) == NULL) {
-				rc = FWTS_OUT_OF_MEMORY;
-				goto tidy;
-			}
-			if ((command = fwts_realloc_strcat(command, quirks)) == NULL) {
-				rc = FWTS_OUT_OF_MEMORY;
-				goto tidy;
-			}
-		}
-	}
-
 	fwts_wakealarm_trigger(fw, delay);
 
 	if (read_wakeup_source(&suspend_wakeup_soure) != FWTS_ERROR) {
@@ -523,7 +455,7 @@ static int s3_do_suspend_resume(fwts_framework *fw,
 	}
 
 	/* Do S3 / S2idle here */
-	status = do_suspend(fwts_settings, percent, &duration, command);
+	status = do_suspend(fwts_settings, percent, &duration);
 
 	if (wk_src_found) {
 		if (read_wakeup_source(&resume_wakeup_soure) != FWTS_ERROR) {
@@ -617,7 +549,7 @@ static int s3_do_suspend_resume(fwts_framework *fw,
 				"Alternatively, re-test with the kernel parameter \"idle=mwait\". ");
 	}
 
-	/* Add in error check for pm-suspend status */
+	/* Add in error check for suspend status */
 	if ((status > 0) && (status < 128)) {
 		(*pm_errors)++;
 		fwts_failed(fw, LOG_LEVEL_HIGH, "PMActionFailedPreSleep",
@@ -1019,9 +951,6 @@ static int s3_options_handler(fwts_framework *fw, int argc, char * const argv[],
 		case 5:
 			s3_device_check = true;
 			break;
-		case 6:
-			s3_quirks = optarg;
-			break;
 		case 7:
 			s3_device_check_delay = atoi(optarg);
 			s3_device_check = true;
@@ -1056,7 +985,6 @@ static fwts_option s3_options[] = {
 	{ "s3-delay-delta", 	"", 1, "Time to be added to delay between S3 iterations. Used in conjunction with --s3-min-delay and --s3-max-delay, e.g. --s3-delay-delta=2.5" },
 	{ "s3-sleep-delay",	"", 1, "Sleep N seconds between start of suspend and wakeup, e.g. --s3-sleep-delay=60" },
 	{ "s3-device-check",	"", 0, "Check differences between device configurations over a S3 cycle. Note we add a default of 15 seconds to allow wifi to re-associate.  Cannot be used with --s3-min-delay, --s3-max-delay and --s3-delay-delta." },
-	{ "s3-quirks",		"", 1, "Comma separated list of quirk arguments to pass to pm-suspend." },
 	{ "s3-device-check-delay", "", 1, "Sleep N seconds before we run a device check after waking up from suspend. Default is 15 seconds, e.g. --s3-device-check-delay=20" },
 	{ "s3-suspend-time",	"", 1, "Maximum expected suspend time in seconds, e.g. --s3-suspend-time=3.5" },
 	{ "s3-resume-time", 	"", 1, "Maximum expected resume time in seconds, e.g. --s3-resume-time=5.1" },

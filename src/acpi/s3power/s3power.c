@@ -31,8 +31,6 @@
 #include <time.h>
 #include <inttypes.h>
 
-#define PM_SUSPEND "pm-suspend"
-
 static int 	s3power_sleep_delay = 600;	/* time between start of suspend and wakeup */
 static uint32_t battery_capacity_mAh;
 static uint32_t battery_capacity_mWh;
@@ -126,18 +124,13 @@ static void detect_pm_method(fwts_pm_method_vars *fwts_settings)
 #endif
 	if (fwts_sysfs_can_suspend(fwts_settings))
 		fwts_settings->fw->pm_method = FWTS_PM_SYSFS;
-	else
-		fwts_settings->fw->pm_method = FWTS_PM_PMUTILS;
 }
 
 #if FWTS_ENABLE_LOGIND
 static int wrap_logind_do_suspend(fwts_pm_method_vars *fwts_settings,
 	const int percent,
-	int *duration,
-	const char *str)
+	int *duration)
 {
-	FWTS_UNUSED(str);
-
 	fwts_progress_message(fwts_settings->fw, percent, "(Suspending)");
 	/* This blocks by entering a glib mainloop */
 	*duration = fwts_logind_wait_for_resume_from_action(fwts_settings, PM_SUSPEND_LOGIND, 0);
@@ -150,39 +143,15 @@ static int wrap_logind_do_suspend(fwts_pm_method_vars *fwts_settings,
 
 static int wrap_sysfs_do_suspend(fwts_pm_method_vars *fwts_settings,
 	const int percent,
-	int *duration,
-	const char *str)
+	int *duration)
 {
 	int status;
 
-	FWTS_UNUSED(str);
 	fwts_progress_message(fwts_settings->fw, percent, "(Suspending)");
 	time(&(fwts_settings->t_start));
 	(void)fwts_klog_write(fwts_settings->fw, "Starting fwts suspend\n");
 	(void)fwts_klog_write(fwts_settings->fw, FWTS_SUSPEND "\n");
 	status = fwts_sysfs_do_suspend(fwts_settings, false);
-	(void)fwts_klog_write(fwts_settings->fw, FWTS_RESUME "\n");
-	(void)fwts_klog_write(fwts_settings->fw, "Finished fwts resume\n");
-	time(&(fwts_settings->t_end));
-	fwts_progress_message(fwts_settings->fw, percent, "(Resumed)");
-
-	*duration = (int)(fwts_settings->t_end - fwts_settings->t_start);
-
-	return status;
-}
-
-static int wrap_pmutils_do_suspend(fwts_pm_method_vars *fwts_settings,
-	const int percent,
-	int *duration,
-	const char *command)
-{
-	int status = FWTS_OK;
-
-	fwts_progress_message(fwts_settings->fw, percent, "(Suspending)");
-	time(&(fwts_settings->t_start));
-	(void)fwts_klog_write(fwts_settings->fw, "Starting fwts suspend\n");
-	(void)fwts_klog_write(fwts_settings->fw, FWTS_SUSPEND "\n");
-	(void)fwts_exec(command, &status);
 	(void)fwts_klog_write(fwts_settings->fw, FWTS_RESUME "\n");
 	(void)fwts_klog_write(fwts_settings->fw, "Finished fwts resume\n");
 	time(&(fwts_settings->t_end));
@@ -254,7 +223,7 @@ static int s3power_test(fwts_framework *fw)
 
 	fwts_pm_method_vars *fwts_settings;
 
-	int (*do_suspend)(fwts_pm_method_vars *, const int, int*, const char*);
+	int (*do_suspend)(fwts_pm_method_vars *, const int, int*);
 
 #if FWTS_ENABLE_LOGIND
 #if !GLIB_CHECK_VERSION(2,35,0)
@@ -286,10 +255,6 @@ static int s3power_test(fwts_framework *fw)
 			do_suspend = &wrap_logind_do_suspend;
 			break;
 #endif
-		case FWTS_PM_PMUTILS:
-			fwts_log_info(fw, "Using pm-utils as the default power method.");
-			do_suspend = &wrap_pmutils_do_suspend;
-			break;
 		case FWTS_PM_SYSFS:
 			fwts_log_info(fw, "Using sysfs as the default power method.");
 			do_suspend = &wrap_sysfs_do_suspend;
@@ -320,7 +285,7 @@ static int s3power_test(fwts_framework *fw)
 	(void)fwts_pm_debug_set(1);
 
 	/* Do S3 here */
-	status = do_suspend(fwts_settings, 100, &duration, PM_SUSPEND);
+	status = do_suspend(fwts_settings, 100, &duration);
 
 	/* Restore pm debug value */
 	if (pm_debug != -1)
@@ -331,7 +296,7 @@ static int s3power_test(fwts_framework *fw)
 	s3power_difference(fw, capacity_before_mAh, capacity_after_mAh, battery_capacity_mAh, "mAh");
 	s3power_difference(fw, capacity_before_mWh, capacity_after_mWh, battery_capacity_mWh, "mWh");
 
-	fwts_log_info(fw, "pm-suspend returned %d after %d seconds.", status, duration);
+	fwts_log_info(fw, "suspend returned %d after %d seconds.", status, duration);
 
 	if (duration < s3power_sleep_delay)
 		fwts_failed(fw, LOG_LEVEL_MEDIUM, "ShortSuspend",
@@ -341,7 +306,7 @@ static int s3power_test(fwts_framework *fw)
 		fwts_failed(fw, LOG_LEVEL_HIGH, "LongSuspend",
 			"Unexpected: S3 much longer than expected (%d seconds).", duration);
 
-	/* Add in error check for pm-suspend status */
+	/* Add in error check for suspend status */
 	if ((status > 0) && (status < 128)) {
 		fwts_failed(fw, LOG_LEVEL_MEDIUM, "PMActionFailedPreS3",
 			"pm-action failed before trying to put the system "

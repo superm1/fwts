@@ -110,8 +110,7 @@
 --pm-method                  Select the power
                              method to use.
                              Accepted values are
-                             "logind", "pm-utils",
-                             "sysfs"
+                             "logind", "sysfs"
 -P, --power-states           Test S3, S4 power
                              states.
 -q, --quiet                  Run quietly.
@@ -169,9 +168,6 @@
 --s3-multiple                Run S3 tests multiple
                              times, e.g.
                              --s3-multiple=10.
---s3-quirks                  Comma separated list
-                             of quirk arguments to
-                             pass to pm-suspend.
 --s3-resume-hook hook        Run a hook script
                              after each S3 resume,
                              0 exit indicates

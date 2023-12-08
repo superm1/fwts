@@ -130,7 +130,7 @@ static fwts_option fwts_framework_options[] = {
 	{ "acpica",		"",   1, "Enable ACPICA run time options." },
 	{ "uefitests",		"",   0, "Run UEFI tests." },
 	{ "rsdp",		"R:", 1, "Specify the physical address of the ACPI RSDP." },
-	{ "pm-method",  "",   1, "Select the power method to use. Accepted values are \"logind\", \"pm-utils\", \"sysfs\""},
+	{ "pm-method",  "",   1, "Select the power method to use. Accepted values are \"logind\", \"sysfs\""},
 	{ "show-tests-categories","", 0, "Show tests and associated categories." },
 	{ "acpitests",		"",   0, "Run general ACPI tests." },
 	{ "acpicompliance",	"",   0, "Run ACPI tests for spec compliance." },
@@ -1112,15 +1112,13 @@ static int fwts_framework_pm_method_parse(fwts_framework *fw, const char *arg)
 		fw->pm_method = FWTS_PM_LOGIND;
 	else
 #endif
-	if (strcmp(arg, "pm-utils") == 0)
-		fw->pm_method = FWTS_PM_PMUTILS;
-	else if (strcmp(arg, "sysfs") == 0)
+	if (strcmp(arg, "sysfs") == 0)
 		fw->pm_method = FWTS_PM_SYSFS;
 	else {
 #if FWTS_ENABLE_LOGIND
-		fprintf(stderr, "--pm-method only supports logind, pm-utils and sysfs methods\n");
+		fprintf(stderr, "--pm-method only supports logind and sysfs methods\n");
 #else
-		fprintf(stderr, "--pm-method only supports pm-utils and sysfs methods\n");
+		fprintf(stderr, "--pm-method only supports sysfs method\n");
 #endif
 		return FWTS_ERROR;
 	}

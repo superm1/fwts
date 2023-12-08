@@ -51,7 +51,7 @@ _fwts()
 			return 0
 			;;
 		'--pm-method')
-			COMPREPLY=( $(compgen -W "logind pm-utils sysfs" -- $cur) )
+			COMPREPLY=( $(compgen -W "logind sysfs" -- $cur) )
 			return 0
 			;;
 		'--log-filter'|'--log-format'|'-w'|'--log-width'|'-R'|'-rsdp'|\

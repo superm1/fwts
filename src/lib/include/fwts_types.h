@@ -47,7 +47,6 @@ typedef enum {
 
 typedef enum {
 	FWTS_PM_LOGIND,
-	FWTS_PM_PMUTILS,
 	FWTS_PM_SYSFS,
 	FWTS_PM_UNDEFINED
 } fwts_pm_method;
